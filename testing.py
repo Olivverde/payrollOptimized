@@ -32,6 +32,7 @@ class PAYROLL(CHANNEL):
         self.month = 0
         self.day = 0
         self.xtension = ''
+        
     
     def add_table(self, nw_table, multiple=0):
         if multiple == 0:
@@ -152,25 +153,27 @@ class DATA_HANDLER(object):
         # master data
         self._TC = self.shortcuts('TC')
         self._cc_new_score = self.shortcuts('PUNTOS_NUEVOS')
+        self.tc_goals = self.shortcuts('METAS_TC')
         
         
         # # master funcs
-
         self.cc_per_channel() # extract credit cards per channels, creates the channels
         self.calc_cc_per_channel()
         
-        # self.channels = {
-        #     'empresarial':{},
-        #     'pricesmart':{},
-        #     'sid':{},
-        #     'venta_directa':{},
-        #     'walmart':{}
-        # }    
+        for i in self.channels:
+            print(i.name)
+        
     def set_channels(self, channel):
         self.channels.append(channel)
     
     def get_TC(self):
         return self._TC
+    
+    def set_TC(self, TC):
+        self._TC = TC
+        
+    def get_scores(self):
+        return self._cc_new_score
     
     def shortcuts(self, tableName):
         for t in self.loaders:
@@ -179,7 +182,7 @@ class DATA_HANDLER(object):
  
     def cc_per_channel(self):
         TC = self.get_TC()
-        temp_channels = TC['canal_especifico'].unique()      
+        temp_channels = TC['canal_especifico'].unique()
         for channel in temp_channels:
             normalized_channel = self.L.normalize_columns([channel])[0]
             TC_channel = TC[TC['canal_especifico'] == channel]
@@ -189,59 +192,105 @@ class DATA_HANDLER(object):
     
     def calc_cc_per_channel(self):
         c = self.channels
+        self.crossover_var = 'numero_de_colaborador'
+        self.create_cc_scores()
         for channel in c:
-            print(channel.name)
-            TC = channel.get_table('TC').get_data()
-            df = self.cc_amount(TC)
-            df = self.cc_type(TC, df)
+            # print(channel.name)
+            TC = channel.get_table('TC').get_data() # Credit Card per Channel
+            df = self.cc_amount(TC, channel.name)
+            df = self.cc_type(TC, df, channel.name)
+            channel.add_table(TABLE(channel.name,df))
             
+            # df = self.cc_colors(TC, df)
+            # print(df)
+    
+    
+    def create_cc_scores(self):
+        TC = self.get_TC()
+        TC['puntos_nuevos'] = TC.apply(lambda row: row['puntos'] if row['primera/segunda/multicuenta'] == 'Primera' else None, axis=1)
+        self.set_TC(TC)
             
-    def cc_amount(self, TC):
-        crossover_var = 'numero_de_colaborador'
-        df = TC.groupby([crossover_var]).size().reset_index(name='cantidad_tc')
-        
+    def cc_amount(self, TC, channel):
+        df = TC.groupby([self.crossover_var]).size().reset_index(name='cantidad_tc')
+        df = self.set_goals(df, channel)
         return df  
     
-    def cc_type(self, TC, df):
-        crossover_var = 'numero_de_colaborador'
-        cc_type = TC.pivot_table(index=crossover_var, columns='primera/segunda/multicuenta',aggfunc='size',fill_value=0)
-        df = pd.merge(df,cc_type, on=crossover_var,how='inner') # merge temporal
+    def set_goals(self, df, channel):
+        channel_verification = self.tc_goals['canal']==channel          
+        cc_goal = self.tc_goals.loc[channel_verification,'meta_tc'].values[0]
+        first_goal = self.tc_goals.loc[channel_verification,'meta_primera'].values[0]
+        if cc_goal != 9999 and first_goal != 9999:
+            df['meta_tc'] = cc_goal
+            df['meta_primera'] = first_goal
+        else:
+            df['meta_tc'] = 30
+            df['meta_primera'] = 25
+        
         return df
     
     
+    def cc_type(self, TC, df, channel):
+        cc_type = TC.pivot_table(index=self.crossover_var, columns='primera/segunda/multicuenta',aggfunc='size',fill_value=0)
+        df = pd.merge(df,cc_type, on=self.crossover_var,how='inner')
+        ########################################################################
+        # self.check_firsts_goal(df, channel)
         
-class COMISIONES(object):
+        return self.first_cc(df)
     
-    def __init__(self, channel_structure) -> None:
+    def check_firsts_goal(self, df, channel):
+        checker = df.copy()
+        checker['goal_fg'] = (df['Primera']>=df['meta_primera']).astype(int)
+        checker = checker[['numero_de_colaborador','goal_fg']]
+        self.cc_sale_score(checker, channel)
+    
+    def cc_sale_score(self, checker, channel):
+        TC = self.get_TC()
+        scores = self.get_scores()
+        # TC['puntos_nuevos'] = TC.apply(self.set_newScore, args=(checker,channel), axis=1)
+        print(TC[['canal_especifico','primera/segunda/multicuenta','puntos_nuevos']].sample(5))
+        # print(TC)
+        
+        
+        # print(TC[['canal_especifico','puntos_nuevos']].sample(15))
+ 
+    # def set_newScore(self, TC, checker, channel):
+    #     if channel not in ('sid','empresarial'):
+    #         if TC['primera/segunda/multicuenta'] == 'Segunda':
+    #             checker_bool = checker.loc[checker['numero_de_colaborador']==TC['numero_de_colaborador'],'goal_fg']
+    #             if len(checker_bool)>0:
+    #                 concat = TC['canal_especifico']+TC['color']+TC['primera/segunda/multicuenta']+str(checker_bool.values[0])
+    #                 return self.extractScore(concat)
+    #         elif TC['primera/segunda/multicuenta'] == 'Primera':
+    #             return TC['puntos_nuevos']
+    #         else:
+    #             return 'from multicuenta'
+    #     else:
+    #         return 'from sid/empresarial'
 
-        goals = {}
+    def extractScore(self, concat):
+        cc_2nd_score = self.get_scores()
+        score = cc_2nd_score.loc[cc_2nd_score['concat']==concat,'puntos'].values[0]
+        return score 
         
-        commission_template = self.create_commission_per_channel(channel_structure)
-        # self.calculate_commission(commission_template)
+    def first_cc(self, df):
+        df['%primeras'] = df['Primera']/df['cantidad_tc']
+        return df
+    
+    def cc_colors(self, TC, df):
+        cc_color = TC.pivot_table(index=self.crossover_var, columns='color',aggfunc='size',fill_value=0)
+        df = pd.merge(df,cc_color, on=self.crossover_var,how='inner')
+        
+        return df
+    
+    
+
+    """
+    Goals per channel august
+    
+    Pricesmart -> 30,21
+    
      
-    def create_commission_per_channel(self, channel_structure):
-        
-        crossover_var = 'numero_de_colaborador'
-        
-        for channel in channel_structure:
-            # print(channel)
-            TC = channel_structure[channel]['TC'] # df de tarjeta de credito      
-            temp_df = TC.groupby([crossover_var]).size().reset_index(name='cantidad_tc') # Calcula el numero de tarjetas colocadas por colaborador
-            # Calcula el tipo de tarjeta colocada (primera, segunda o multicuenta)
-            cc_type = TC.pivot_table(index=crossover_var, columns='primera/segunda/multicuenta',aggfunc='size',fill_value=0)
-            temp_df = pd.merge(temp_df,cc_type, on=crossover_var,how='inner') # merge temporal
-            # Calcula el numero de colores colocados por colaborador
-            cc_color = TC.pivot_table(index=crossover_var, columns='color',aggfunc='size',fill_value=0)
-            temp_df = pd.merge(temp_df,cc_color, on=crossover_var,how='inner') # merge temporal
-            temp_df['%primeras'] = temp_df['Primera']/temp_df['cantidad_tc']
-            # pnts_first = TC[TC['primera/segunda/multicuenta']=='Primera'][[crossover_var, 'primera/segunda/multicuenta']]
-            # pnts_first = pnts_first.groupby([crossover_var]).sum().reset_index(name='pts_1ras_cuentas')
-            
-            print(temp_df)
-    
-        
-    
-    
+    """
         
         
  
