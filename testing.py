@@ -250,7 +250,7 @@ class DATA_HANDLER(object):
         TC = self.get_TC()
         scores = self.get_scores()
         print(channel)
-        TC['puntos_nuevos'] = TC.apply(self.set_newScore, args=(checker,channel), axis=1)
+        TC['puntos_nuevos'] = TC.apply(self.set_new_score, args=(checker,channel), axis=1)
         self.set_TC(TC)
 
         ########################## DEBUGGING ############################################################################
@@ -259,30 +259,31 @@ class DATA_HANDLER(object):
         # print(TC)
         # print(TC[TC['canal_especifico']=='Empresarial'][TC['puntos_nuevos'].isna()][['numero_solicitud','canal_especifico','puntos_nuevos','primera/segunda/multicuenta']].shape)
  
-    def set_newScore(self, TC, checker, channel):
-       
-        if TC['primera/segunda/multicuenta'] == 'Primera':     
+    def set_new_score(self, TC, checker, channel):
+        if TC['primera/segunda/multicuenta'] == 'Primera':
             return TC['puntos_nuevos']
-        
         elif TC['primera/segunda/multicuenta'] == 'Segunda':
-            if self.L.normalize_columns([TC['canal_especifico']])[0] == channel:
-                if channel in ('sid','empresarial'):
-                    return TC['puntos'] 
-                else:
-                    checker_bool = checker.loc[checker['numero_de_colaborador']==TC['numero_de_colaborador'],'goal_fg']
-                    concat = TC['canal_especifico']+TC['color']+TC['primera/segunda/multicuenta']+str(checker_bool.values[0])
-                    
-                    return self.extractScore(concat)
-            else:
-                return TC['puntos_nuevos']
+            return self.if_second(TC, channel, checker)
         else:
             return 0
 
 
-    def extractScore(self, concat):
+    def if_second(self, TC, channel, checker):
+        if self.L.normalize_columns([TC['canal_especifico']])[0] != channel:
+            return TC['puntos_nuevos']
+        if channel in ('sid', 'empresarial'):
+            return TC['puntos']
+        return self.extract_score(self.concat_goal_class(TC, self.extract_goal_compliance(checker, TC)))
+
+    def concat_goal_class(self, TC, checker_bool):
+        return TC['canal_especifico']+TC['color']+TC['primera/segunda/multicuenta']+str(checker_bool.values[0])
+        
+    def extract_goal_compliance(self, checker, TC):
+        return checker.loc[checker['numero_de_colaborador']==TC['numero_de_colaborador'],'goal_fg']
+        
+    def extract_score(self, concat):
         cc_2nd_score = self.get_scores()
-        score = cc_2nd_score.loc[cc_2nd_score['concat']==concat,'puntos'].values[0]
-        return score 
+        return cc_2nd_score.loc[cc_2nd_score['concat']==concat,'puntos'].values[0] 
         
     def first_cc(self, df):
         df['%primeras'] = df['Primera']/df['cantidad_tc']
