@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import numpy as np
 
 class TABLE(object):    
     def __init__(self, name=None, data=None) -> None:    
@@ -48,7 +49,12 @@ class PAYROLL(CHANNEL):
         for table in self._tables:
             if table.name == name:
                 return table
-
+    
+    def get_available_table_names(self):
+        temp = []
+        for i in self._tables:
+            temp.append([self.name,i.name])
+        return temp
 class LOADER(object):
     
     def __init__(self):
@@ -160,8 +166,7 @@ class DATA_HANDLER(object):
         self.cc_per_channel() # extract credit cards per channels, creates the channels
         self.calc_cc_per_channel()
         
-        for i in self.channels:
-            print(i.name)
+        
         
     def set_channels(self, channel):
         self.channels.append(channel)
@@ -195,19 +200,18 @@ class DATA_HANDLER(object):
         self.crossover_var = 'numero_de_colaborador'
         self.create_cc_scores()
         for channel in c:
-            # print(channel.name)
             TC = channel.get_table('TC').get_data() # Credit Card per Channel
             df = self.cc_amount(TC, channel.name)
             df = self.cc_type(TC, df, channel.name)
-            channel.add_table(TABLE(channel.name,df))
-            
-            # df = self.cc_colors(TC, df)
-            # print(df)
-    
+            df = self.sum_firsts_cc(TC,df,channel.name)
+            channel.add_table(TABLE('payroll',df))
+
+    def sum_firsts_cc(self, TC, df, channel):
+        print(TC,df,channel)################################
     
     def create_cc_scores(self):
         TC = self.get_TC()
-        TC['puntos_nuevos'] = TC.apply(lambda row: row['puntos'] if row['primera/segunda/multicuenta'] == 'Primera' else None, axis=1)
+        TC['puntos_nuevos'] = TC.apply(lambda row: row['puntos'] if row['primera/segunda/multicuenta'] == 'Primera' else np.nan, axis=1)
         self.set_TC(TC)
             
     def cc_amount(self, TC, channel):
@@ -228,15 +232,14 @@ class DATA_HANDLER(object):
         
         return df
     
-    
     def cc_type(self, TC, df, channel):
         cc_type = TC.pivot_table(index=self.crossover_var, columns='primera/segunda/multicuenta',aggfunc='size',fill_value=0)
         df = pd.merge(df,cc_type, on=self.crossover_var,how='inner')
-        ########################################################################
-        # self.check_firsts_goal(df, channel)
+        self.check_firsts_goal(df, channel)
         
         return self.first_cc(df)
     
+        
     def check_firsts_goal(self, df, channel):
         checker = df.copy()
         checker['goal_fg'] = (df['Primera']>=df['meta_primera']).astype(int)
@@ -246,26 +249,35 @@ class DATA_HANDLER(object):
     def cc_sale_score(self, checker, channel):
         TC = self.get_TC()
         scores = self.get_scores()
-        # TC['puntos_nuevos'] = TC.apply(self.set_newScore, args=(checker,channel), axis=1)
-        print(TC[['canal_especifico','primera/segunda/multicuenta','puntos_nuevos']].sample(5))
+        print(channel)
+        TC['puntos_nuevos'] = TC.apply(self.set_newScore, args=(checker,channel), axis=1)
+        self.set_TC(TC)
+
+        ########################## DEBUGGING ############################################################################
+        # print(TC[TC['primera/segunda/multicuenta']=='Segunda'][TC['canal_especifico']=='Walmart']['puntos_nuevos'])
+        # print(TC[['canal_especifico','primera/segunda/multicuenta','puntos_nuevos']].sample(5))
         # print(TC)
-        
-        
-        # print(TC[['canal_especifico','puntos_nuevos']].sample(15))
+        # print(TC[TC['canal_especifico']=='Empresarial'][TC['puntos_nuevos'].isna()][['numero_solicitud','canal_especifico','puntos_nuevos','primera/segunda/multicuenta']].shape)
  
-    # def set_newScore(self, TC, checker, channel):
-    #     if channel not in ('sid','empresarial'):
-    #         if TC['primera/segunda/multicuenta'] == 'Segunda':
-    #             checker_bool = checker.loc[checker['numero_de_colaborador']==TC['numero_de_colaborador'],'goal_fg']
-    #             if len(checker_bool)>0:
-    #                 concat = TC['canal_especifico']+TC['color']+TC['primera/segunda/multicuenta']+str(checker_bool.values[0])
-    #                 return self.extractScore(concat)
-    #         elif TC['primera/segunda/multicuenta'] == 'Primera':
-    #             return TC['puntos_nuevos']
-    #         else:
-    #             return 'from multicuenta'
-    #     else:
-    #         return 'from sid/empresarial'
+    def set_newScore(self, TC, checker, channel):
+       
+        if TC['primera/segunda/multicuenta'] == 'Primera':     
+            return TC['puntos_nuevos']
+        
+        elif TC['primera/segunda/multicuenta'] == 'Segunda':
+            if self.L.normalize_columns([TC['canal_especifico']])[0] == channel:
+                if channel in ('sid','empresarial'):
+                    return TC['puntos'] 
+                else:
+                    checker_bool = checker.loc[checker['numero_de_colaborador']==TC['numero_de_colaborador'],'goal_fg']
+                    concat = TC['canal_especifico']+TC['color']+TC['primera/segunda/multicuenta']+str(checker_bool.values[0])
+                    
+                    return self.extractScore(concat)
+            else:
+                return TC['puntos_nuevos']
+        else:
+            return 0
+
 
     def extractScore(self, concat):
         cc_2nd_score = self.get_scores()
@@ -283,18 +295,4 @@ class DATA_HANDLER(object):
         return df
     
     
-
-    """
-    Goals per channel august
-    
-    Pricesmart -> 30,21
-    
-     
-    """
-        
-        
- 
-"""
-Clases
-"""
 data = DATA_HANDLER()
