@@ -51,10 +51,7 @@ class PAYROLL(CHANNEL):
                 return table
     
     def get_available_table_names(self):
-        temp = []
-        for i in self._tables:
-            temp.append([self.name,i.name])
-        return temp
+        return [[self.name,i.name] for i in self._tables]
 class LOADER(object):
     
     def __init__(self):
@@ -160,11 +157,16 @@ class DATA_HANDLER(object):
         self._TC = self.shortcuts('TC')
         self._cc_new_score = self.shortcuts('PUNTOS_NUEVOS')
         self.tc_goals = self.shortcuts('METAS_TC')
+        self.class_tc = self.shortcuts('CLASIFICACION_TC')
         
         
         # # master funcs
         self.cc_per_channel() # extract credit cards per channels, creates the channels
         self.calc_cc_per_channel()
+        self.calc_cc_class()
+        
+        # for i in self.channels:
+        #     print(i.name,'\n',i.get_table('payroll').get_data())
         
         
         
@@ -203,11 +205,38 @@ class DATA_HANDLER(object):
             TC = channel.get_table('TC').get_data() # Credit Card per Channel
             df = self.cc_amount(TC, channel.name)
             df = self.cc_type(TC, df, channel.name)
-            df = self.sum_firsts_cc(TC,df,channel.name)
+            df = self.sum_firsts_cc(df,channel.name)
             channel.add_table(TABLE('payroll',df))
 
-    def sum_firsts_cc(self, TC, df, channel):
-        print(TC,df,channel)################################
+    def calc_cc_class(self):
+        CTC = self.class_tc
+        for channel in self.channels:
+            PR = channel.get_table('payroll').get_data()
+            print(channel.name)
+            if channel.name not in  ('sid', 'empresarial'):
+                PR['categoria_tc'] = PR.apply(self.set_class,args=(CTC[CTC['canal'].apply(lambda x: channel.name in x)],), axis=1)
+                print(PR)
+            else:
+                print(PR)
+
+    def set_class(self, PR, CTC):
+
+        return CTC[CTC['minimo'] <= PR['puntos_tc']][CTC['maximo'] > PR['puntos_tc']]['categoria'].values[0]
+        # print(CTC.loc[CTC['minimo'] >= PR['puntos_tc']][
+        #     CTC['maximo'] <= PR['puntos_tc'], 'categoria'
+        # ].values[0])
+        
+
+    def sum_firsts_cc(self, df, channel):
+        TC = self.get_TC()
+        TC = TC[TC['canal_especifico'].str.lower().str.replace(' ', '_')==channel]
+        temp = TC.groupby(['numero_de_colaborador', 'primera/segunda/multicuenta'])['puntos_nuevos'].sum().reset_index()
+        temp = temp.pivot(index='numero_de_colaborador', columns='primera/segunda/multicuenta', values='puntos_nuevos').reset_index()
+        temp.columns.name = None
+        temp = temp.rename(columns={'Primera': 'pnts_1ras_cuentas', 'Segunda': 'pnts_omas'})[['numero_de_colaborador','pnts_1ras_cuentas','pnts_omas']]
+        df = pd.merge(df,temp,how='left',on='numero_de_colaborador').replace({None: np.nan}).fillna(0)
+        df['puntos_tc'] = df['pnts_1ras_cuentas'] + df['pnts_omas']
+        return df
     
     def create_cc_scores(self):
         TC = self.get_TC()
@@ -220,15 +249,15 @@ class DATA_HANDLER(object):
         return df  
     
     def set_goals(self, df, channel):
-        channel_verification = self.tc_goals['canal']==channel          
+        channel_verification = self.tc_goals['canal']==channel
         cc_goal = self.tc_goals.loc[channel_verification,'meta_tc'].values[0]
         first_goal = self.tc_goals.loc[channel_verification,'meta_primera'].values[0]
         if cc_goal != 9999 and first_goal != 9999:
             df['meta_tc'] = cc_goal
             df['meta_primera'] = first_goal
         else:
-            df['meta_tc'] = 30
-            df['meta_primera'] = 25
+            df['meta_tc'] = 1
+            df['meta_primera'] = 1
         
         return df
     
@@ -249,7 +278,6 @@ class DATA_HANDLER(object):
     def cc_sale_score(self, checker, channel):
         TC = self.get_TC()
         scores = self.get_scores()
-        print(channel)
         TC['puntos_nuevos'] = TC.apply(self.set_new_score, args=(checker,channel), axis=1)
         self.set_TC(TC)
 
