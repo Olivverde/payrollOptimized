@@ -212,12 +212,9 @@ class DATA_HANDLER(object):
         CTC = self.class_tc
         for channel in self.channels:
             PR = channel.get_table('payroll').get_data()
-            print(channel.name)
             if channel.name not in  ('sid', 'empresarial'):
                 PR['categoria_tc'] = PR.apply(self.set_class,args=(CTC[CTC['canal'].apply(lambda x: channel.name in x)],), axis=1)
-                print(PR)
-            else:
-                print(PR)
+            print(PR)
 
     def set_class(self, PR, CTC):
 
