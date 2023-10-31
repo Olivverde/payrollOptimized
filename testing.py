@@ -165,8 +165,8 @@ class DATA_HANDLER(object):
         self.calc_cc_per_channel()
         self.calc_cc_class()
         
-        # for i in self.channels:
-        #     print(i.name,'\n',i.get_table('payroll').get_data())
+        for i in self.channels:
+            print(i.name,'\n',i.get_table('payroll').get_data())
         
         
         
@@ -214,14 +214,11 @@ class DATA_HANDLER(object):
             PR = channel.get_table('payroll').get_data()
             if channel.name not in  ('sid', 'empresarial'):
                 PR['categoria_tc'] = PR.apply(self.set_class,args=(CTC[CTC['canal'].apply(lambda x: channel.name in x)],), axis=1)
-            print(PR)
+            channel.get_table('payroll').set_data(PR)
 
     def set_class(self, PR, CTC):
 
-        return CTC[CTC['minimo'] <= PR['puntos_tc']][CTC['maximo'] > PR['puntos_tc']]['categoria'].values[0]
-        # print(CTC.loc[CTC['minimo'] >= PR['puntos_tc']][
-        #     CTC['maximo'] <= PR['puntos_tc'], 'categoria'
-        # ].values[0])
+        return CTC.loc[(CTC['minimo'] <= PR['puntos_tc']) & (CTC['maximo'] > PR['puntos_tc']), 'categoria'].values[0]
         
 
     def sum_firsts_cc(self, df, channel):
@@ -278,12 +275,6 @@ class DATA_HANDLER(object):
         TC['puntos_nuevos'] = TC.apply(self.set_new_score, args=(checker,channel), axis=1)
         self.set_TC(TC)
 
-        ########################## DEBUGGING ############################################################################
-        # print(TC[TC['primera/segunda/multicuenta']=='Segunda'][TC['canal_especifico']=='Walmart']['puntos_nuevos'])
-        # print(TC[['canal_especifico','primera/segunda/multicuenta','puntos_nuevos']].sample(5))
-        # print(TC)
-        # print(TC[TC['canal_especifico']=='Empresarial'][TC['puntos_nuevos'].isna()][['numero_solicitud','canal_especifico','puntos_nuevos','primera/segunda/multicuenta']].shape)
- 
     def set_new_score(self, TC, checker, channel):
         if TC['primera/segunda/multicuenta'] == 'Primera':
             return TC['puntos_nuevos']
