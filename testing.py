@@ -158,17 +158,40 @@ class DATA_HANDLER(object):
         self._cc_new_score = self.shortcuts('PUNTOS_NUEVOS')
         self.tc_goals = self.shortcuts('METAS_TC')
         self.class_tc = self.shortcuts('CLASIFICACION_TC')
+        self.additional = self.shortcuts('ADICIONALES')
+        # print(self.additional)
         
         
         # # master funcs
         self.cc_per_channel() # extract credit cards per channels, creates the channels
         self.calc_cc_per_channel()
         self.calc_cc_class()
+        self.set_additional()
         
         for i in self.channels:
             print(i.name,'\n',i.get_table('payroll').get_data())
-        
-        
+
+
+    def set_additional(self):
+        add = self.additional
+        for channel in self.channels:
+            PR = channel.get_table('payroll').get_data()
+            if channel.name not in  ('empresarial'):
+                PR['cant_adicionales'] = PR.apply(self.set_add_amount,args=(add[add['canal'].str.lower().str.replace(' ', '_').apply(lambda x: channel.name in x)],), axis=1)
+                PR = self.set_porc_scope(PR)
+            channel.get_table('payroll').set_data(PR)
+    
+    def set_porc_scope(self, PR):
+        try:
+            PR['%_alcance_de_meta_adicional'] =  PR['cant_adicionales']/PR['meta_tc']
+        except Exception:
+            PR['%_alcance_de_meta_adicional'] = 0
+            
+        return PR
+    
+    def set_add_amount(self, PR, add):
+        # print(add[add['sap']==PR['numero_de_colaborador']])
+        return len(add[add['sap']==PR['numero_de_colaborador']])
         
     def set_channels(self, channel):
         self.channels.append(channel)
